@@ -1,0 +1,22 @@
+{
+  "email": "1your111@example.com",
+  "secret": "sachin",
+  "task": "test-app",
+  "round": 3,
+  "nonce": "456def",
+  "brief": "Update the web app to include a new About page and a CSS stylesheet",
+  "checks": ["Repo has README.md", "Repo has LICENSE"],
+  "evaluation_url": "https://httpbin.org/post",
+  "attachments": [
+    {
+      "name": "about.html",
+      "content": "<h1>About Page</h1><p>This is the about page.</p>",
+      "mime": "text/html"
+    },
+    {
+      "name": "styles.css",
+      "content": "body { font-family: Arial; background-color: #f0f0f0; }",
+      "mime": "text/css"
+    }
+  ]
+}
