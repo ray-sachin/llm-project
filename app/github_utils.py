@@ -26,10 +26,10 @@ def create_repo(repo_name: str, description: str = ""):
         return repo
     except GithubException:
         pass
-
+    safe_description = re.sub(r'[\r\n\t]+', ' ', description)[:300]
     repo = user.create_repo(
         name=repo_name,
-        description=description,
+        description=f"{safe_description} (see README for full brief)",
         private=False,
         auto_init=False
     )
