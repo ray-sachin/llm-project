@@ -1,11 +1,34 @@
 # app/auth.py
 from fastapi import APIRouter, HTTPException, Depends, Request
-from pydantic import BaseModel
-import os
+from pydantic import BaseModel, validator
+import os, re, time, collections
 from dotenv import load_dotenv
 from .supabase_client import supabase, supabase_service, verify_user_token, get_user_github_token, get_authenticated_client
+from .encryption import encrypt_token, decrypt_token
 
 load_dotenv()
+
+# ── Simple in-memory rate limiter ──
+_rate_limit_store: dict[str, list[float]] = collections.defaultdict(list)
+RATE_LIMIT_WINDOW = 60  # seconds
+RATE_LIMIT_MAX = 15     # requests per window
+
+def _check_rate_limit(key: str):
+    """Raise 429 if more than RATE_LIMIT_MAX requests in the window."""
+    now = time.time()
+    timestamps = _rate_limit_store[key]
+    # Prune old entries
+    _rate_limit_store[key] = [t for t in timestamps if now - t < RATE_LIMIT_WINDOW]
+    if len(_rate_limit_store[key]) >= RATE_LIMIT_MAX:
+        raise HTTPException(status_code=429, detail="Too many requests. Please wait a moment.")
+    _rate_limit_store[key].append(now)
+
+
+def _sanitize(value: str, max_len: int = 500) -> str:
+    """Strip dangerous characters and enforce max length."""
+    if not value:
+        return value
+    return value.strip()[:max_len]
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
@@ -14,13 +37,86 @@ class SignUpRequest(BaseModel):
     password: str
     username: str
 
+    @validator('email')
+    def validate_email(cls, v):
+        v = v.strip().lower()
+        if not re.match(r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$', v):
+            raise ValueError('Invalid email format')
+        if len(v) > 254:
+            raise ValueError('Email too long')
+        return v
+
+    @validator('password')
+    def validate_password(cls, v):
+        if len(v) < 8:
+            raise ValueError('Password must be at least 8 characters')
+        if len(v) > 128:
+            raise ValueError('Password too long')
+        return v
+
+    @validator('username')
+    def validate_username(cls, v):
+        v = v.strip()
+        if not re.match(r'^[a-zA-Z0-9_-]{1,39}$', v):
+            raise ValueError('Username must be 1-39 chars: letters, numbers, hyphens, underscores')
+        return v
+
 class SignInRequest(BaseModel):
     email: str
     password: str
 
+    @validator('email')
+    def validate_email(cls, v):
+        return v.strip().lower()[:254]
+
 class GitHubTokenRequest(BaseModel):
     token: str
     github_username: str
+
+    @validator('token')
+    def validate_token(cls, v):
+        v = v.strip()
+        if len(v) < 10 or len(v) > 500:
+            raise ValueError('Invalid token length')
+        return v
+
+    @validator('github_username')
+    def validate_github_username(cls, v):
+        v = v.strip()
+        if not re.match(r'^[a-zA-Z0-9_-]{1,39}$', v):
+            raise ValueError('Invalid GitHub username format')
+        return v
+
+class OAuthProfileRequest(BaseModel):
+    user_id: str
+    email: str
+    username: str
+    avatar_url: str | None = None
+    provider: str = "unknown"
+    provider_token: str | None = None
+
+    @validator('email')
+    def validate_email(cls, v):
+        v = v.strip().lower()
+        if not re.match(r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$', v):
+            raise ValueError('Invalid email format')
+        return v
+
+    @validator('username')
+    def validate_username(cls, v):
+        v = v.strip()
+        if not v:
+            return 'user'
+        # Allow broader OAuth usernames but sanitize
+        v = re.sub(r'[^a-zA-Z0-9_. -]', '', v)[:39]
+        return v or 'user'
+
+    @validator('user_id')
+    def validate_user_id(cls, v):
+        v = v.strip()
+        if not v or len(v) > 100:
+            raise ValueError('Invalid user ID')
+        return v
 
 class AuthenticatedUser:
     """Simple wrapper for authenticated user data"""
@@ -46,17 +142,21 @@ async def get_current_user(request: Request):
     return AuthenticatedUser(id=user.id, email=getattr(user, 'email', ''), access_token=token)
 
 @router.post("/signup")
-async def sign_up(request: SignUpRequest):
+async def sign_up(request: SignUpRequest, req: Request):
     """Register new user"""
+    client_ip = req.client.host if req.client else "unknown"
+    _check_rate_limit(f"signup:{client_ip}")
     try:
         # Create auth user via Supabase Auth
+        frontend_url = os.getenv("FRONTEND_URL", "http://localhost:5173")
         response = supabase.auth.sign_up({
             "email": request.email,
             "password": request.password,
             "options": {
                 "data": {
                     "username": request.username,
-                }
+                },
+                "email_redirect_to": f"{frontend_url}/auth/callback",
             }
         })
         
@@ -118,8 +218,10 @@ async def sign_up(request: SignUpRequest):
         raise HTTPException(status_code=400, detail=error_msg)
 
 @router.post("/login")
-async def sign_in(request: SignInRequest):
+async def sign_in(request: SignInRequest, req: Request):
     """Authenticate user and return session"""
+    client_ip = req.client.host if req.client else "unknown"
+    _check_rate_limit(f"login:{client_ip}")
     try:
         response = supabase.auth.sign_in_with_password({
             "email": request.email,
@@ -182,16 +284,45 @@ async def get_profile(current_user = Depends(get_current_user)):
             "username": current_user.email.split("@")[0],
         }
 
+@router.post("/oauth-profile")
+async def sync_oauth_profile(request: OAuthProfileRequest, current_user = Depends(get_current_user)):
+    """Create or update user profile for OAuth-authenticated users."""
+    try:
+        # Ensure the authenticated user matches the profile being synced
+        if request.user_id != current_user.id:
+            raise HTTPException(status_code=403, detail="User ID mismatch")
+
+        client = get_authenticated_client(current_user.access_token)
+
+        profile_data = {
+            "id": current_user.id,
+            "email": _sanitize(request.email, 254),
+            "username": _sanitize(request.username, 39),
+        }
+
+        if request.avatar_url:
+            profile_data["avatar_url"] = _sanitize(request.avatar_url, 500)
+
+        # Upsert user profile
+        client.table("users").upsert(profile_data).execute()
+
+        return {"message": "Profile synced successfully", "username": request.username}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Failed to sync profile: {str(e)}")
+
 @router.post("/github-token")
 async def set_github_token(request: GitHubTokenRequest, current_user = Depends(get_current_user)):
-    """Save user's GitHub token (encrypted in database)"""
+    """Save user's GitHub token (encrypted at rest)"""
     try:
-        # Upsert GitHub token
+        # Encrypt token before storing
+        encrypted = encrypt_token(request.token)
         client = get_authenticated_client(current_user.access_token)
         response = client.table("github_tokens").upsert({
             "user_id": current_user.id,
-            "token": request.token,
-            "github_username": request.github_username,
+            "token": encrypted,
+            "github_username": _sanitize(request.github_username, 39),
         }).execute()
         
         return {
@@ -234,14 +365,22 @@ async def delete_github_token(current_user = Depends(get_current_user)):
 class AipipeTokenRequest(BaseModel):
     token: str
 
+    @validator('token')
+    def validate_token(cls, v):
+        v = v.strip()
+        if len(v) < 10 or len(v) > 2000:
+            raise ValueError('Invalid token length')
+        return v
+
 @router.post("/aipipe-token")
 async def set_aipipe_token(request: AipipeTokenRequest, current_user = Depends(get_current_user)):
-    """Save user's AIPIPE token"""
+    """Save user's AIPIPE token (encrypted at rest)"""
     try:
+        encrypted = encrypt_token(request.token)
         client = get_authenticated_client(current_user.access_token)
         client.table("aipipe_tokens").upsert({
             "user_id": current_user.id,
-            "token": request.token,
+            "token": encrypted,
             "updated_at": "now()",
         }).execute()
         return {"message": "AIPIPE token saved successfully", "configured": True}
@@ -255,8 +394,8 @@ async def get_aipipe_token(current_user = Depends(get_current_user)):
         client = get_authenticated_client(current_user.access_token)
         response = client.table("aipipe_tokens").select("token").eq("user_id", current_user.id).single().execute()
         if response.data and response.data.get("token"):
-            # Return masked token for display
-            raw = response.data["token"]
+            # Decrypt then mask for display
+            raw = decrypt_token(response.data["token"])
             masked = raw[:8] + "..." + raw[-4:] if len(raw) > 12 else "****"
             return {"configured": True, "masked_token": masked}
         raise HTTPException(status_code=404, detail="AIPIPE token not configured")

@@ -39,14 +39,36 @@ app = FastAPI(title="LLM Deployment Platform", version="2.0.0")
 # Include auth routes
 app.include_router(auth_router)
 
-# Enable CORS for frontend communication
+# Enable CORS — restrict to known origins
+_allowed_origins = [
+    FRONTEND_URL,
+    "http://localhost:5173",
+    "http://localhost:5174",
+    "http://localhost:5175",
+    "http://localhost:5176",
+    "http://localhost:3000",
+]
+# Deduplicate and filter empty
+_allowed_origins = list({o for o in _allowed_origins if o})
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=_allowed_origins,
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
+    allow_headers=["Authorization", "Content-Type", "Accept"],
 )
+
+# Security headers middleware
+@app.middleware("http")
+async def add_security_headers(request: Request, call_next):
+    response = await call_next(request)
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["X-XSS-Protection"] = "1; mode=block"
+    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()"
+    return response
 
 print("✅ Backend loaded - Multi-user platform with Supabase")
 

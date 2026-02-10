@@ -2,6 +2,7 @@
 import os
 from supabase import create_client, Client
 from dotenv import load_dotenv
+from .encryption import decrypt_token
 
 load_dotenv()
 
@@ -46,12 +47,15 @@ async def verify_user_token(token: str):
         return None
 
 async def get_user_github_token(user_id: str, access_token: str = None):
-    """Get user's GitHub token from database"""
+    """Get user's GitHub token from database (decrypted)"""
     try:
         client = get_authenticated_client(access_token) if access_token else supabase_service
         response = client.table("github_tokens").select("token, github_username").eq("user_id", user_id).single().execute()
         if response.data:
-            return response.data["token"], response.data["github_username"]
+            raw_token = response.data["token"]
+            # Decrypt the token (handles both encrypted and legacy plaintext)
+            plaintext_token = decrypt_token(raw_token)
+            return plaintext_token, response.data["github_username"]
         return None, None
     except Exception as e:
         print(f"Error fetching GitHub token: {e}")
@@ -122,12 +126,13 @@ async def log_project_history(user_id: str, project_id: str, action: str, status
         return False
 
 async def get_user_aipipe_token(user_id: str, access_token: str = None):
-    """Get user's AIPIPE token from database"""
+    """Get user's AIPIPE token from database (decrypted)"""
     try:
         client = get_authenticated_client(access_token) if access_token else supabase_service
         response = client.table("aipipe_tokens").select("token").eq("user_id", user_id).single().execute()
         if response.data:
-            return response.data["token"]
+            raw_token = response.data["token"]
+            return decrypt_token(raw_token)
         return None
     except Exception as e:
         print(f"Error fetching AIPIPE token: {e}")

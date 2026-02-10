@@ -6,6 +6,7 @@ import { History } from './pages/History';
 import Login from './pages/Login';
 import Signup from './pages/Signup';
 import Settings from './pages/Settings';
+import AuthCallback from './pages/AuthCallback';
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const accessToken = localStorage.getItem('access_token');
@@ -29,6 +30,7 @@ function App() {
       <Routes>
         <Route path="/login" element={<AuthRoute><Login /></AuthRoute>} />
         <Route path="/signup" element={<AuthRoute><Signup /></AuthRoute>} />
+        <Route path="/auth/callback" element={<AuthCallback />} />
         
         <Route
           element={

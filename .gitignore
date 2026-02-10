@@ -62,6 +62,7 @@ logs/
 # Documentation - Development/Setup Files (NOT FOR PRODUCTION)
 ARCHITECTURE.md
 DEPLOYMENT.md
+DEPLOY_FREE.md
 FILE_MANIFEST.md
 FRONTEND_README.md
 INSTALLATION_COMPLETE.md
@@ -86,3 +87,7 @@ runtime.txt
 # Build outputs
 frontend/dist/
 frontend/src/utils/historyStorage.ts
+
+# Config files (deployment specific)
+railway.json
+frontend/vercel.json

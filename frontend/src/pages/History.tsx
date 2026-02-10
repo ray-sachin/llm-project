@@ -189,10 +189,31 @@ export const History: React.FC = () => {
   return (
     <div className="history-page">
       <div className="history-header">
-        <h1>Project History</h1>
-        <p className="history-subtitle">
-          View all your project submissions and their deployment status
-        </p>
+        <div>
+          <h1>Project History</h1>
+          <p className="history-subtitle">
+            View all your project submissions and their deployment status
+          </p>
+        </div>
+        {submissions.length > 0 && (
+          <div className="history-controls">
+            <button
+              onClick={refreshProjects}
+              className="btn btn-secondary"
+              title="Refresh all projects"
+            >
+              <RefreshCw size={16} />
+              Refresh All
+            </button>
+            <button
+              onClick={handleClearAll}
+              className="btn btn-danger"
+              title="Clear all history"
+            >
+              Clear All
+            </button>
+          </div>
+        )}
       </div>
 
       {error && (
@@ -210,26 +231,6 @@ export const History: React.FC = () => {
         </div>
       ) : (
         <>
-          <div className="history-controls">
-            <button
-              onClick={refreshProjects}
-              className="btn btn-secondary"
-              title="Refresh all projects"
-            >
-              <RefreshCw size={16} />
-              Refresh All
-            </button>
-            {submissions.length > 0 && (
-              <button
-                onClick={handleClearAll}
-                className="btn btn-danger"
-                title="Clear all history"
-              >
-                Clear All
-              </button>
-            )}
-          </div>
-
           <div className="submissions-grid">
             {submissions.map((submission) => (
               <div key={submission.id || submission.task_id} className="submission-card">
