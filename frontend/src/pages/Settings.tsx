@@ -31,6 +31,7 @@ export default function Settings() {
   const [aipipeSaved, setAipipeSaved] = useState(false);
   const [aipipeError, setAipipeError] = useState<string | null>(null);
   const [showAipipeToken, setShowAipipeToken] = useState(false);
+  const [freeTrialRemaining, setFreeTrialRemaining] = useState<number | null>(null);
 
   const accessToken = localStorage.getItem('access_token');
 
@@ -41,6 +42,7 @@ export default function Settings() {
     }
     loadGithubConfig();
     loadAipipeConfig();
+    loadFreeTrialStatus();
   }, []);
 
   const loadGithubConfig = async () => {
@@ -120,6 +122,17 @@ export default function Settings() {
       if (err.response?.status !== 404) {
         console.error('Failed to load AIPIPE config');
       }
+    }
+  };
+
+  const loadFreeTrialStatus = async () => {
+    try {
+      const response = await axios.get(`${import.meta.env.VITE_API_URL}/api/auth/free-trial-status`, {
+        headers: { Authorization: `Bearer ${accessToken}` },
+      });
+      setFreeTrialRemaining(response.data.remaining);
+    } catch {
+      // Ignore errors — default to unknown
     }
   };
 
@@ -256,6 +269,26 @@ export default function Settings() {
           <p className="section-description">
             Add your AIPIPE token for AI-powered code generation.
           </p>
+
+          <div style={{ background: '#1a1a2e', border: '1px solid #333', borderRadius: '8px', padding: '12px 16px', marginBottom: '16px', fontSize: '14px', color: '#ccc' }}>
+            <strong style={{ color: '#f0c040' }}>🎁 Free Trial:</strong>{' '}
+            {aipipeConfig?.configured ? (
+              <span style={{ color: '#4ade80' }}>You have your own token configured — unlimited requests!</span>
+            ) : freeTrialRemaining !== null && freeTrialRemaining > 0 ? (
+              <span>You have <strong style={{ color: '#4ade80' }}>{freeTrialRemaining} free</strong> AI generation request remaining.</span>
+            ) : freeTrialRemaining !== null && freeTrialRemaining <= 0 ? (
+              <span style={{ color: '#f87171' }}>Free trial used. Add your AIPIPE token below to continue generating projects.</span>
+            ) : (
+              <span>You get <strong>1 free</strong> AI generation request.</span>
+            )}{' '}
+            {!aipipeConfig?.configured && (
+              <span>Get your token at{' '}
+                <a href="https://aipipe.org/login" target="_blank" rel="noopener noreferrer" style={{ color: '#6ea8fe' }}>
+                  aipipe.org
+                </a>.
+              </span>
+            )}
+          </div>
 
           {aipipeConfig?.configured && (
             <div className="success-banner">

@@ -137,3 +137,28 @@ async def get_user_aipipe_token(user_id: str, access_token: str = None):
     except Exception as e:
         print(f"Error fetching AIPIPE token: {e}")
         return None
+
+
+# === Free LLM Usage Tracking ===
+
+async def get_free_usage_count(user_id: str) -> int:
+    """Get how many free LLM requests a user has made (using server's AIPIPE token)."""
+    try:
+        response = supabase_service.table("free_llm_usage").select("id", count="exact").eq("user_id", user_id).execute()
+        return response.count if response.count is not None else 0
+    except Exception as e:
+        print(f"Error checking free usage: {e}")
+        return 0
+
+
+async def record_free_usage(user_id: str, task_id: str = None):
+    """Record that a user consumed a free LLM request."""
+    try:
+        supabase_service.table("free_llm_usage").insert({
+            "user_id": user_id,
+            "task_id": task_id,
+        }).execute()
+        return True
+    except Exception as e:
+        print(f"Error recording free usage: {e}")
+        return False

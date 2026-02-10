@@ -9,11 +9,22 @@ from openai import OpenAI
 
 load_dotenv()
 
-# Initialize OpenAI (aiPipe endpoint)
-client = OpenAI(
-    api_key=os.getenv("AIPIPE_TOKEN"),
-    base_url="https://aipipe.org/openai/v1"  # Critical for aiPipe!
-)
+# Lazy-initialized OpenAI client — created on first use
+# This prevents crashes when AIPIPE_TOKEN env var is not set
+_default_client = None
+
+def _get_default_client():
+    """Get or create the default OpenAI client using server's AIPIPE_TOKEN."""
+    global _default_client
+    token = os.getenv("AIPIPE_TOKEN")
+    if not token:
+        return None
+    if _default_client is None:
+        _default_client = OpenAI(
+            api_key=token,
+            base_url="https://aipipe.org/openai/v1"
+        )
+    return _default_client
 
 TMP_DIR = Path("/tmp/llm_attachments")
 TMP_DIR.mkdir(parents=True, exist_ok=True)
@@ -180,14 +191,17 @@ The brief mentions or implies these files:
 5. The final output must contain all files in one response.
 """
 
-    # Call OpenAI (aiPipe) — use per-user token if available
+    # Call OpenAI (aiPipe) — use per-user token if available, fall back to server token
     try:
-        llm_client = client
         if aipipe_token:
             llm_client = OpenAI(
                 api_key=aipipe_token,
                 base_url="https://aipipe.org/openai/v1"
             )
+        else:
+            llm_client = _get_default_client()
+            if llm_client is None:
+                raise RuntimeError("No AIPIPE token available. Please add your own AIPIPE token in Settings.")
         response = llm_client.responses.create(
             model="gpt-5",
             input=[

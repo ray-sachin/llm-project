@@ -20,6 +20,8 @@ from .supabase_client import (
     get_user_projects,
     get_user_github_token,
     get_user_aipipe_token,
+    get_free_usage_count,
+    record_free_usage,
     log_project_history,
 )
 from fastapi.routing import APIRoute
@@ -109,6 +111,12 @@ def process_request_with_logging(task_id: str, data: dict):
                 print(f"🌐 Pages URL: {result['pages_url']}")
         
         project_status[task_id]["status"] = "completed"
+        
+        # Record free trial usage only after successful completion
+        if data.get("using_free_trial") and user_id:
+            import asyncio
+            asyncio.run(record_free_usage(user_id, task_id))
+            print(f"   🎁 Free trial request recorded for user {user_id}")
         
         # Update Supabase
         if user_id:
@@ -301,8 +309,34 @@ async def deploy_project(request: Request, background_tasks: BackgroundTasks, cu
         if not github_token or not github_username:
             return JSONResponse(status_code=400, content={"error": "GitHub token not configured. Please add your GitHub token in settings."})
         
-        # Get user's AIPIPE token (falls back to env var)
+        # Get user's AIPIPE token (user's own token always takes priority)
         user_aipipe_token = await get_user_aipipe_token(current_user.id, current_user.access_token)
+        using_free_trial = False
+        
+        if not user_aipipe_token:
+            # No user token — check free trial eligibility
+            free_count = await get_free_usage_count(current_user.id)
+            server_token = os.getenv("AIPIPE_TOKEN")
+            
+            if free_count >= 1:
+                # Already used the 1 free request
+                return JSONResponse(status_code=403, content={
+                    "error": "Free trial used. Please add your own AIPIPE token in Settings to continue.",
+                    "code": "AIPIPE_TOKEN_REQUIRED",
+                    "settings_url": "/settings"
+                })
+            
+            if not server_token:
+                # Server has no fallback token either
+                return JSONResponse(status_code=403, content={
+                    "error": "No AIPIPE token available. Please add your own AIPIPE token in Settings.",
+                    "code": "AIPIPE_TOKEN_REQUIRED",
+                    "settings_url": "/settings"
+                })
+            
+            # Use server's token for this 1 free request
+            using_free_trial = True
+            print(f"   🎁 Using free trial request for user {current_user.id}")
         
         print(f"✅ Deployment request accepted")
         print(f"   User: {github_username}")
@@ -326,7 +360,8 @@ async def deploy_project(request: Request, background_tasks: BackgroundTasks, cu
             "nonce": uuid.uuid4().hex[:8],
             "attachment": [],
             "access_token": current_user.access_token,
-            "aipipe_token": user_aipipe_token
+            "aipipe_token": user_aipipe_token,  # None = server fallback inside generator
+            "using_free_trial": using_free_trial,
         }
         
         # Store initial status

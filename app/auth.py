@@ -3,7 +3,7 @@ from fastapi import APIRouter, HTTPException, Depends, Request
 from pydantic import BaseModel, validator
 import os, re, time, collections
 from dotenv import load_dotenv
-from .supabase_client import supabase, supabase_service, verify_user_token, get_user_github_token, get_authenticated_client
+from .supabase_client import supabase, supabase_service, verify_user_token, get_user_github_token, get_authenticated_client, get_free_usage_count
 from .encryption import encrypt_token, decrypt_token
 
 load_dotenv()
@@ -413,3 +413,18 @@ async def delete_aipipe_token(current_user = Depends(get_current_user)):
         return {"message": "AIPIPE token removed"}
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.get("/free-trial-status")
+async def get_free_trial_status(current_user = Depends(get_current_user)):
+    """Check if user has remaining free trial requests."""
+    try:
+        count = await get_free_usage_count(current_user.id)
+        return {
+            "used": count,
+            "limit": 1,
+            "remaining": max(0, 1 - count),
+            "has_free_trial": count < 1,
+        }
+    except Exception as e:
+        return {"used": 0, "limit": 1, "remaining": 1, "has_free_trial": True}

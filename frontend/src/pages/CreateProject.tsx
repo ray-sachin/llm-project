@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Link } from 'react-router-dom';
 import { api } from '../api';
 import { Send, Upload, AlertCircle, CheckCircle, Loader, Copy, Eye } from 'lucide-react';
 import { historyStorage } from '../utils/historyStorage';
@@ -12,6 +12,7 @@ export const CreateProject: React.FC = () => {
   const [files, setFiles] = useState<File[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [needsAipipeToken, setNeedsAipipeToken] = useState(false);
   const [success, setSuccess] = useState(false);
   const [taskId, setTaskId] = useState<string | null>(null);
 
@@ -29,6 +30,7 @@ export const CreateProject: React.FC = () => {
     e.preventDefault();
     setError(null);
     setSuccess(false);
+    setNeedsAipipeToken(false);
 
     if (!brief.trim()) {
       setError('Please enter a project brief');
@@ -64,8 +66,14 @@ export const CreateProject: React.FC = () => {
       } else {
         setError(response.error || 'Failed to submit project');
       }
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'An error occurred');
+    } catch (err: any) {
+      const detail = err?.response?.data;
+      if (detail?.code === 'AIPIPE_TOKEN_REQUIRED') {
+        setNeedsAipipeToken(true);
+        setError(detail.error);
+      } else {
+        setError(err instanceof Error ? err.message : (detail?.error || 'An error occurred'));
+      }
     } finally {
       setLoading(false);
     }
@@ -94,7 +102,16 @@ export const CreateProject: React.FC = () => {
         {error && (
           <div className="form-alert alert-error">
             <AlertCircle size={20} />
-            <span>{error}</span>
+            <div>
+              <span>{error}</span>
+              {needsAipipeToken && (
+                <div style={{ marginTop: '8px' }}>
+                  <Link to="/settings" className="btn btn-primary" style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', fontSize: '14px', padding: '6px 14px' }}>
+                    Go to Settings to add your AIPIPE token
+                  </Link>
+                </div>
+              )}
+            </div>
           </div>
         )}
 
