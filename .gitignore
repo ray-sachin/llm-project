@@ -61,6 +61,7 @@ logs/
 
 # Documentation - Development/Setup Files (NOT FOR PRODUCTION)
 ARCHITECTURE.md
+AUDIT_COMPLETE.md
 DEPLOYMENT.md
 DEPLOY_FREE.md
 FILE_MANIFEST.md
@@ -70,8 +71,10 @@ NEXT_STEPS.md
 QUICK_START.txt
 README_NEW.md
 RUN_COMMANDS.txt
+SECURITY_AUDIT.md
 SETUP.md
 SETUP_GUIDE.md
+SETUP_OAUTH.md
 SUMMARY.txt
 frontend/README_FRONTEND.md
 
@@ -83,6 +86,17 @@ sample.png
 setup.bat
 setup.ps1
 runtime.txt
+test-oauth.ps1
+
+# Docker (development specific, deployments use other platforms)
+Dockerfile
+docker-compose.yml
+docker-compose.override.yml
+.dockerignore
+
+# Development config
+.editorconfig
+Makefile
 
 # Build outputs
 frontend/dist/
