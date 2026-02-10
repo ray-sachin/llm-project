@@ -60,3 +60,22 @@ logs/
 
 # Test files
 .test_github.py
+
+# Documentation - Development/Setup Files (NOT FOR PRODUCTION)
+ARCHITECTURE.md
+DEPLOYMENT.md
+FILE_MANIFEST.md
+FRONTEND_README.md
+INSTALLATION_COMPLETE.md
+NEXT_STEPS.md
+QUICK_START.txt
+README_NEW.md
+RUN_COMMANDS.txt
+SETUP.md
+SETUP_GUIDE.md
+SUMMARY.txt
+frontend/README_FRONTEND.md
+frontend/src/utils/historyStorage.ts
+
+# Build outputs
+frontend/dist/
