@@ -1,4 +1,4 @@
-# 🧠 Test App – LLM Code Deployment Project
+# Test App – LLM Code Deployment Project
 
 This project was built as part of the **TDS Project: LLM Code Deployment**.  
 It demonstrates how an application can be **automatically generated, updated, and deployed** using an **LLM-assisted backend** integrated with GitHub and GitHub Pages.
@@ -119,7 +119,6 @@ test-app/
 
 ## 🧑‍💻 Author
 **Sachin Ray**  
-📧 Email: `23f2002518@ds.study.iitm.ac.in`  
 🧩 Project: LLM Code Deployment  
 
 ---
