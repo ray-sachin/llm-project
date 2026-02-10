@@ -104,4 +104,3 @@ frontend/src/utils/historyStorage.ts
 
 # Config files (deployment specific)
 railway.json
-frontend/vercel.json
