@@ -44,6 +44,7 @@ app.include_router(auth_router)
 # Enable CORS — restrict to known origins
 _allowed_origins = [
     FRONTEND_URL,  # Production Vercel URL from env var
+    "https://madme.vercel.app",  # Production Vercel deployment
     "http://localhost:5173",  # Local dev
     "http://localhost:5174",
     "http://localhost:5175",
@@ -51,7 +52,7 @@ _allowed_origins = [
     "http://localhost:3000",
 ]
 # Deduplicate and filter empty
-_allowed_origins = list({o for o in _allowed_origins if o})
+_allowed_origins = list({o.rstrip("/") for o in _allowed_origins if o})
 
 app.add_middleware(
     CORSMiddleware,
