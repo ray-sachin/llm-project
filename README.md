@@ -119,7 +119,6 @@ test-app/
 
 ## 🧑‍💻 Author
 **Sachin Ray**  
-📧 Email: `23f2002518@ds.study.iitm.ac.in`  
 🧩 Project: LLM Code Deployment  
 
 ---
