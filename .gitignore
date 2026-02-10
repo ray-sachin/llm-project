@@ -49,6 +49,7 @@ yarn-error.log
 .pytest_cache/
 .coverage
 htmlcov/
+test_github.py
 
 # OS
 Thumbs.db
@@ -57,9 +58,6 @@ Thumbs.db
 # Logs
 *.log
 logs/
-
-# Test files
-.test_github.py
 
 # Documentation - Development/Setup Files (NOT FOR PRODUCTION)
 ARCHITECTURE.md
@@ -75,7 +73,16 @@ SETUP.md
 SETUP_GUIDE.md
 SUMMARY.txt
 frontend/README_FRONTEND.md
-frontend/src/utils/historyStorage.ts
+
+# Sample/Test Files
+project.zip
+round1_request.json
+round3_request.json
+sample.png
+setup.bat
+setup.ps1
+runtime.txt
 
 # Build outputs
 frontend/dist/
+frontend/src/utils/historyStorage.ts
