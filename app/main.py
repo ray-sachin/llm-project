@@ -43,8 +43,8 @@ app.include_router(auth_router)
 
 # Enable CORS — restrict to known origins
 _allowed_origins = [
-    FRONTEND_URL,
-    "http://localhost:5173",
+    FRONTEND_URL,  # Production Vercel URL from env var
+    "http://localhost:5173",  # Local dev
     "http://localhost:5174",
     "http://localhost:5175",
     "http://localhost:5176",
