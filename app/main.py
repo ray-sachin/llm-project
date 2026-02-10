@@ -264,8 +264,9 @@ def read_root():
     return {"msg": "OK"}
 
 @app.get("/health")
+@app.head("/health")
 def health_check():
-    """Health check endpoint"""
+    """Health check endpoint - supports GET and HEAD for monitoring services"""
     return {"status": "ok", "message": "Backend is running"}
 
 @app.get("/projects")
