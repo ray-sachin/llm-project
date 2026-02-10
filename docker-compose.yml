@@ -1,0 +1,74 @@
+version: '3.8'
+
+services:
+  # LLM Deployment Platform - Full Stack
+  llm-platform:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: llm-deployment-platform
+    ports:
+      - "8000:8000"
+      - "5173:5173"  # If running frontend in dev mode inside container (optional)
+    environment:
+      # Supabase Configuration (Required - from your Supabase project)
+      SUPABASE_URL: ${SUPABASE_URL}
+      SUPABASE_ANON_KEY: ${SUPABASE_ANON_KEY}
+      SUPABASE_SERVICE_KEY: ${SUPABASE_SERVICE_KEY}
+      
+      # GitHub Configuration (User-provided)
+      # Leave empty for per-user GitHub tokens (recommended)
+      GITHUB_TOKEN: ${GITHUB_TOKEN:-}
+      USERCODE: ${USERCODE:-}
+      
+      # AIPIPE Configuration (User-provided)
+      AIPIPE_TOKEN: ${AIPIPE_TOKEN:-}
+      
+      # Frontend URL for CORS
+      FRONTEND_URL: ${FRONTEND_URL:-http://localhost:3000}
+      
+      # API Secret (auto-generated if not provided)
+      SECRET: ${SECRET:-auto-generated}
+      
+    volumes:
+      # Optional: Mount your source code for development
+      # - ./app:/app/app
+      # - ./frontend/src:/app/frontend/src
+    
+    restart: unless-stopped
+    
+    # Wait for healthy status before marking as started
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 5s
+    
+    networks:
+      - llm-platform-network
+
+networks:
+  llm-platform-network:
+    driver: bridge
+
+# Usage:
+# 1. Create .env file with your Supabase credentials:
+#    SUPABASE_URL=https://your-project.supabase.co
+#    SUPABASE_ANON_KEY=your_anon_key
+#    SUPABASE_SERVICE_KEY=your_service_key
+#    FRONTEND_URL=http://localhost:3000
+#
+# 2. Build and run:
+#    docker-compose up --build
+#
+# 3. Access the application:
+#    - Backend API: http://localhost:8000
+#    - API Docs: http://localhost:8000/docs
+#    - Frontend: Configure your reverse proxy or serve frontend separately
+#
+# 4. For production:
+#    - Set FRONTEND_URL to your domain
+#    - Use a reverse proxy (nginx) to serve frontend
+#    - Enable HTTPS
+#    - Set secure environment variables

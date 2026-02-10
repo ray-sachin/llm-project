@@ -1,25 +1,54 @@
-from fastapi import FastAPI, Request, BackgroundTasks
-import os, json, base64
+from fastapi import FastAPI, Request, BackgroundTasks, Depends, HTTPException
+import os, json, base64, uuid
 from dotenv import load_dotenv
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from .llm_generator import generate_app_code, decode_attachments
 from .github_utils import (
     create_repo,
     create_or_update_file,
     enable_pages,
     generate_mit_license,
+    batch_commit_files,
 )
 from .notify import notify_evaluation_server
 from .github_utils import create_or_update_binary_file
+from .auth import router as auth_router, get_current_user
+from .supabase_client import (
+    save_project,
+    update_project_status,
+    get_user_projects,
+    get_user_github_token,
+    get_user_aipipe_token,
+    log_project_history,
+)
 from fastapi.routing import APIRoute
 import time
 
 load_dotenv()
 USER_SECRET = os.getenv("SECRET")
 USERNAME = os.getenv("USERCODE")
+FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:5173")  # Configurable frontend URL
 PROCESSED_PATH = "/tmp/processed_requests.json"
 
-app = FastAPI()
-print("main.py loaded")
+# Store for tracking project status (temporary - can use Supabase for persistence)
+project_status = {}
+
+app = FastAPI(title="LLM Deployment Platform", version="2.0.0")
+
+# Include auth routes
+app.include_router(auth_router)
+
+# Enable CORS for frontend communication
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+print("✅ Backend loaded - Multi-user platform with Supabase")
 
 # === Persistence for processed requests ===
 def load_processed():
@@ -33,11 +62,72 @@ def load_processed():
 def save_processed(data):
     json.dump(data, open(PROCESSED_PATH, "w"), indent=2)
 
+def process_request_with_logging(task_id: str, data: dict):
+    """Wrapper around process_request to update status"""
+    user_id = data.get("user_id")
+    try:
+        print(f"\n{'='*60}")
+        print(f"📝 Processing task: {task_id}")
+        print(f"👤 User: {data.get('github_username')}")
+        print(f"📄 Brief: {data['brief'][:60]}...")
+        print(f"{'='*60}\n")
+        
+        project_status[task_id]["status"] = "generating_code"
+        
+        # Call the main process function and get results
+        result = process_request(data)
+        
+        # Update status in both memory and Supabase
+        if result:
+            if "repo_url" in result:
+                project_status[task_id]["github_url"] = result["repo_url"]
+                print(f"📦 GitHub URL: {result['repo_url']}")
+            if "pages_url" in result:
+                project_status[task_id]["pages_url"] = result["pages_url"]
+                print(f"🌐 Pages URL: {result['pages_url']}")
+        
+        project_status[task_id]["status"] = "completed"
+        
+        # Update Supabase
+        if user_id:
+            import asyncio
+            asyncio.run(update_project_status(
+                user_id=user_id,
+                task_id=task_id,
+                status="completed",
+                github_url=project_status[task_id].get("github_url"),
+                pages_url=project_status[task_id].get("pages_url"),
+                access_token=data.get("access_token")
+            ))
+        
+        print(f"\n✅ Task {task_id} completed successfully!\n")
+        
+    except Exception as e:
+        print(f"\n❌ Task {task_id} failed with error: {str(e)}\n")
+        import traceback
+        traceback.print_exc()
+        project_status[task_id]["status"] = "failed"
+        project_status[task_id]["error"] = str(e)
+        
+        # Update Supabase with error
+        if user_id:
+            import asyncio
+            asyncio.run(update_project_status(
+                user_id=user_id,
+                task_id=task_id,
+                status="failed",
+                access_token=data.get("access_token")
+            ))
+
 # === Background task ===
 def process_request(data):
     round_num = data.get("round", 1)
     task_id = data["task"]
+    github_token = data.get("github_token")  # Per-user token
+    github_username = data.get("github_username")  # Per-user username
+    
     print(f"⚙ Starting background process for task {task_id} (round {round_num})")
+    print(f"👤 Using GitHub account: {github_username}")
 
     # Decode attachments (supports both 'url' and 'content')
     attachments = data.get("attachments", [])
@@ -45,7 +135,7 @@ def process_request(data):
     print("Attachments saved:", saved_attachments)
 
     # Step 0: Fetch previous README for round 2 context
-    repo = create_repo(task_id, description=f"Auto-generated app for task: {data['brief']}")
+    repo = create_repo(task_id, description=f"Auto-generated app for task: {data['brief']}", github_token=github_token)
     prev_readme = None
     if round_num >= 2:
         try:
@@ -61,7 +151,8 @@ def process_request(data):
         attachments=attachments,
         checks=data.get("checks", []),
         round_num=round_num,
-        prev_readme=prev_readme
+        prev_readme=prev_readme,
+        aipipe_token=data.get("aipipe_token")
     )
 
     files = gen.get("files", {})
@@ -82,21 +173,21 @@ def process_request(data):
         except Exception as e:
             print("⚠ Attachment commit failed:", e)
 
-    # Step 3: Commit generated app files (index.html, README.md)
-    for fname, content in files.items():
-        create_or_update_file(repo, fname, content, f"Add/Update {fname}")
-
-    # Step 4: Commit MIT license
-    mit_text = generate_mit_license()
-    create_or_update_file(repo, "LICENSE", mit_text, "Add MIT license")
+    # Step 3: Commit generated app files + LICENSE in a SINGLE commit
+    # This prevents multiple GitHub Actions workflow triggers (and email spam)
+    all_files = dict(files)  # Copy generated files (index.html, README.md, etc.)
+    all_files["LICENSE"] = generate_mit_license()  # Add license to same commit
+    batch_commit_files(repo, all_files, f"Update project files (round {round_num})")
 
     # Step 5: GitHub Pages enablement
+    # Always set pages_url since the URL format is predictable
+    pages_url = f"https://{github_username}.github.io/{task_id}/"
     if round_num == 1:
-        pages_ok = enable_pages(task_id, branch="main")
-        pages_url = f"https://{USERNAME}.github.io/{task_id}/" if pages_ok else None
+        pages_ok = enable_pages(task_id, branch="main", github_token=github_token, github_username=github_username)
+        if pages_ok:
+            print(f"✅ Pages URL: {pages_url}")
     else:
-        pages_ok = True
-        pages_url = f"https://{USERNAME}.github.io/{task_id}/"
+        print(f"✅ Pages URL (existing): {pages_url}")
 
     # Step 6: Get latest commit SHA
     try:
@@ -104,7 +195,7 @@ def process_request(data):
     except Exception:
         commit_sha = None
 
-    # Step 7: Notify evaluation server
+    # Step 7: Build payload for notification/storage
     payload = {
         "email": data["email"],
         "task": data["task"],
@@ -114,7 +205,9 @@ def process_request(data):
         "commit_sha": commit_sha,
         "pages_url": pages_url,
     }
-    notify_evaluation_server(data["evaluation_url"], payload)
+    
+    # Skip evaluation server notifications - disabled to avoid email spam
+    print(f"⏭️  Skipping evaluation server notification (disabled)")
 
     # Step 8: Save processed request to avoid duplicates
     processed = load_processed()
@@ -123,6 +216,12 @@ def process_request(data):
     save_processed(processed)
 
     print(f"✅ Finished round {round_num} for {task_id}")
+    
+    # Return URLs for status tracking
+    return {
+        "repo_url": repo.html_url,
+        "pages_url": pages_url
+    }
 
 @app.get("/debug-routes")
 def list_routes():
@@ -133,9 +232,118 @@ def read_root():
     print("Received GET /")
     return {"msg": "OK"}
 
+@app.get("/health")
+def health_check():
+    """Health check endpoint"""
+    return {"status": "ok", "message": "Backend is running"}
+
+@app.get("/projects")
+async def get_projects(current_user = Depends(get_current_user)):
+    """Get all projects for the authenticated user"""
+    try:
+        projects = await get_user_projects(current_user.id, current_user.access_token)
+        return projects
+    except Exception as e:
+        print(f"❌ Error fetching projects: {str(e)}")
+        return []
+
 @app.get("/api-endpoint")
 async def test_endpoint():
     return {"status": "ok"}
+
+# === Endpoint for frontend ===
+@app.post("/deploy")
+async def deploy_project(request: Request, background_tasks: BackgroundTasks, current_user = Depends(get_current_user)):
+    """Frontend endpoint for submitting new projects (requires authentication)"""
+    print(f"📩 Deployment request from user: {current_user.id}")
+    
+    try:
+        form_data = await request.form()
+        brief = form_data.get("brief", "")
+        checks = form_data.get("checks", "")
+        
+        if not brief:
+            return JSONResponse(status_code=400, content={"error": "Project brief is required"})
+        
+        # Parse checks if it's a JSON string
+        try:
+            if isinstance(checks, str) and checks.startswith('['):
+                checks_list = json.loads(checks)
+            else:
+                checks_list = [c.strip() for c in checks.split(',') if c.strip()] if checks else []
+        except:
+            checks_list = []
+        
+        # Get user's GitHub token from Supabase
+        github_token, github_username = await get_user_github_token(current_user.id, current_user.access_token)
+        if not github_token or not github_username:
+            return JSONResponse(status_code=400, content={"error": "GitHub token not configured. Please add your GitHub token in settings."})
+        
+        # Get user's AIPIPE token (falls back to env var)
+        user_aipipe_token = await get_user_aipipe_token(current_user.id, current_user.access_token)
+        
+        print(f"✅ Deployment request accepted")
+        print(f"   User: {github_username}")
+        print(f"   Brief: {brief[:50]}...")
+        print(f"   Checks: {checks_list}")
+        
+        # Create task ID from brief (this will be the repo name)
+        sanitized_brief = "".join(c if c.isalnum() or c in "-_ " else "" for c in brief[:30]).strip().replace(" ", "-").lower()
+        task_id = sanitized_brief or f"app-{uuid.uuid4().hex[:8]}"
+        
+        # Prepare data for processing
+        request_data = {
+            "task": task_id,
+            "brief": brief,
+            "checks": checks_list,
+            "user_id": current_user.id,
+            "email": current_user.email,
+            "github_token": github_token,
+            "github_username": github_username,
+            "round": 1,
+            "nonce": uuid.uuid4().hex[:8],
+            "attachment": [],
+            "access_token": current_user.access_token,
+            "aipipe_token": user_aipipe_token
+        }
+        
+        # Store initial status
+        project_status[task_id] = {
+            "user_id": current_user.id,
+            "status": "processing",
+            "brief": brief,
+            "checks": checks_list,
+            "created_at": str(__import__('datetime').datetime.now()),
+            "github_url": None,
+            "pages_url": None,
+            "error": None
+        }
+        
+        # Save to Supabase
+        await save_project(
+            user_id=current_user.id,
+            task_id=task_id,
+            brief=brief,
+            checks=checks_list,
+            status="processing",
+            round_num=1,
+            access_token=current_user.access_token
+        )
+        
+        # Schedule background processing
+        background_tasks.add_task(process_request_with_logging, task_id, request_data)
+        
+        print(f"✅ Task {task_id} enqueued for processing")
+        
+        return {
+            "task_id": task_id,
+            "check_status_url": f"/status/{task_id}"
+        }
+    except Exception as e:
+        print(f"❌ Error: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        return JSONResponse(status_code=500, content={"error": str(e)})
 
 # === Main endpoint ===
 @app.post("/api-endpoint")
@@ -163,3 +371,89 @@ async def receive_request(request: Request, background_tasks: BackgroundTasks):
 
     # Immediate HTTP 200 acknowledgment
     return {"status": "accepted", "note": f"processing round {data['round']} started"}
+
+
+# === Status & Debugging Endpoints ===
+@app.get("/status/{task_id}")
+def get_task_status(task_id: str):
+    """Get the status of a project deployment"""
+    # If we have it in memory, return it
+    if task_id in project_status:
+        return {
+            "task_id": task_id,
+            **project_status[task_id]
+        }
+    
+    # Otherwise, try to check if the GitHub repo exists
+    # This handles cases where the backend restarted after task completion
+    try:
+        from github import Github, GithubException
+        import os
+        github_token = os.getenv("GITHUB_TOKEN")
+        username = os.getenv("USERCODE")
+        
+        if github_token and username:
+            g = Github(github_token)
+            user = g.get_user()
+            
+            try:
+                # Check if repo exists
+                repo = user.get_repo(task_id)
+                # Repo exists, so task is completed
+                github_url = repo.html_url
+                pages_url = f"https://{username}.github.io/{task_id}/"
+                
+                return {
+                    "task_id": task_id,
+                    "status": "completed",
+                    "github_url": github_url,
+                    "pages_url": pages_url,
+                    "brief": "",
+                    "checks": [],
+                    "created_at": "",
+                    "error": None
+                }
+            except GithubException:
+                # Repo doesn't exist, might still be processing or failed
+                pass
+    except Exception as e:
+        print(f"Error checking GitHub for task {task_id}: {e}")
+    
+    # Not found anywhere
+    from fastapi.responses import JSONResponse
+    return JSONResponse(status_code=404, content={"error": "Task not found", "task_id": task_id})
+
+@app.get("/all-tasks")
+def get_all_tasks():
+    """Get status of all tasks for debugging"""
+    return {
+        "total_tasks": len(project_status),
+        "tasks": project_status
+    }
+
+@app.get("/logs")
+def get_logs():
+    """Get recent logs - useful for debugging"""
+    return {
+        "message": "Check the backend terminal/console for detailed logs",
+        "note": "Backend logs are printed to stdout in real-time",
+        "status": "Backend is running with logging enabled"
+    }
+
+@app.get("/config")
+def get_config():
+    """Check configuration (safe values only)"""
+    return {
+        "github_username": os.getenv("USERCODE", "NOT SET"),
+        "github_token_set": bool(os.getenv("GITHUB_TOKEN")),
+        "openai_api_key_set": bool(os.getenv("OPENAI_API_KEY")),
+        "environment": "development" if os.getenv("DEBUG") else "production"
+    }
+
+
+if __name__ == "__main__":
+    import uvicorn
+    print("🚀 Starting FastAPI server...")
+    print("📍 API available at: http://localhost:8000")
+    print("📚 Documentation at: http://localhost:8000/docs")
+    uvicorn.run("app.main:app", host="0.0.0.0", port=8000, reload=True)

@@ -1,0 +1,50 @@
+# Git
+.git
+.gitignore
+.gitattributes
+
+# Node
+frontend/node_modules
+frontend/dist
+.npmrc
+npm-debug.log
+
+# Python
+app/__pycache__
+app/*.pyc
+app/.pytest_cache
+*.egg-info
+dist
+build
+.venv
+venv
+
+# IDE
+.vscode
+.idea
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Testing
+.coverage
+htmlcov
+
+# Logs
+logs
+*.log
+
+# OS
+Thumbs.db
+.DS_Store
+
+# Development
+frontend/.cache
+frontend/.turbo
+.turborc

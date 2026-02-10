@@ -10,7 +10,7 @@ load_dotenv()
 # Test GitHub
 # -------------------------
 GITHUB_TOKEN = os.getenv("GITHUB_TOKEN")
-USERNAME = os.getenv("GITHUB_USERNAME")
+USERNAME = os.getenv("USERCODE")  # Read from USERCODE in .env file
 
 auth = Auth.Token(GITHUB_TOKEN)
 g = Github(auth=auth)

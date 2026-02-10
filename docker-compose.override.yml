@@ -1,0 +1,24 @@
+# Development overrides for docker-compose
+# This file is automatically loaded by Docker Compose
+# Provides hot-reload and easier debugging for development
+
+version: '3.8'
+
+services:
+  llm-platform:
+    # Enable volume mounting for live code reloading
+    volumes:
+      - ./app:/app/app
+      - ./frontend/src:/app/frontend/src
+
+    # Override environment for development
+    environment:
+      DEBUG: "true"
+      LOG_LEVEL: "DEBUG"
+
+    # Enable stdin/stdout for debugging
+    stdin_open: true
+    tty: true
+
+    # Use development mode
+    command: ["python", "-m", "uvicorn", "app.main:app", "--reload", "--host", "0.0.0.0", "--port", "8000"]

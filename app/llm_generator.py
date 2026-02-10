@@ -127,10 +127,11 @@ This README was generated as a fallback (OpenAI did not return an explicit READM
 # ==========================================================
 # Enhanced multi-file generator
 # ==========================================================
-def generate_app_code(brief: str, attachments=None, checks=None, round_num=1, prev_readme=None):
+def generate_app_code(brief: str, attachments=None, checks=None, round_num=1, prev_readme=None, aipipe_token=None):
     """
     Generate or revise a multi-file app using the OpenAI Responses API.
     Automatically detects filenames from the brief and parses multiple files from model output.
+    Uses per-user aipipe_token if provided, otherwise falls back to env var.
     """
     saved = decode_attachments(attachments or [])
     attachments_meta = summarize_attachment_meta(saved)
@@ -179,9 +180,15 @@ The brief mentions or implies these files:
 5. The final output must contain all files in one response.
 """
 
-    # Call OpenAI (aiPipe)
+    # Call OpenAI (aiPipe) — use per-user token if available
     try:
-        response = client.responses.create(
+        llm_client = client
+        if aipipe_token:
+            llm_client = OpenAI(
+                api_key=aipipe_token,
+                base_url="https://aipipe.org/openai/v1"
+            )
+        response = llm_client.responses.create(
             model="gpt-5",
             input=[
                 {"role": "system", "content": "You are a helpful coding assistant that generates structured multi-file projects."},
