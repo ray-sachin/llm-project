@@ -82,7 +82,7 @@ export default function Login() {
   return (
     <div className="auth-container">
       <div className="auth-box">
-        <h1>🚀 LLM Deployment Platform</h1>
+        <h1>🚀 Madme</h1>
         <h2>Welcome Back</h2>
 
         {error && <div className="error-message">{error}</div>}

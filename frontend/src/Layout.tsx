@@ -1,10 +1,23 @@
-import React from 'react';
-import { Link, useNavigate, Outlet } from 'react-router-dom';
-import { Zap, Plus, Home, History, Settings, LogOut } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { Link, useNavigate, useLocation, Outlet } from 'react-router-dom';
+import { Zap, Plus, Home, History, Settings, LogOut, Menu, X } from 'lucide-react';
 import './Layout.css';
 
 export const Layout: React.FC = () => {
   const navigate = useNavigate();
+  const location = useLocation();
+  const [menuOpen, setMenuOpen] = useState(false);
+
+  // Close menu on route change
+  useEffect(() => {
+    setMenuOpen(false);
+  }, [location.pathname]);
+
+  // Prevent body scroll when menu is open
+  useEffect(() => {
+    document.body.style.overflow = menuOpen ? 'hidden' : '';
+    return () => { document.body.style.overflow = ''; };
+  }, [menuOpen]);
 
   const handleLogout = () => {
     localStorage.removeItem('access_token');
@@ -19,9 +32,22 @@ export const Layout: React.FC = () => {
         <div className="nav-container">
           <Link to="/" className="nav-brand">
             <Zap size={24} />
-            <span>LLM Deploy</span>
+            <span>Madme</span>
           </Link>
-          <div className="nav-links">
+
+          {/* Hamburger button — mobile only */}
+          <button
+            className="hamburger-btn"
+            onClick={() => setMenuOpen(!menuOpen)}
+            aria-label="Toggle menu"
+          >
+            {menuOpen ? <X size={22} /> : <Menu size={22} />}
+          </button>
+
+          {/* Overlay for mobile */}
+          {menuOpen && <div className="nav-overlay" onClick={() => setMenuOpen(false)} />}
+
+          <div className={`nav-links${menuOpen ? ' open' : ''}`}>
             <Link to="/" className="nav-link">
               <Home size={18} />
               <span>Dashboard</span>
@@ -49,7 +75,7 @@ export const Layout: React.FC = () => {
         <Outlet />
       </main>
       <footer className="footer">
-        <p>&copy; 2026 LLM Deploy Platform. Auto-generate and deploy web applications with AI.</p>
+        <p>&copy; 2026 Madme. Auto-generate and deploy web applications with AI.</p>
       </footer>
     </div>
   );

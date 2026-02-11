@@ -118,7 +118,7 @@ export default function AuthCallback() {
   return (
     <div className="auth-container">
       <div className="auth-box" style={{ textAlign: 'center' }}>
-        <h1>🚀 LLM Deploy</h1>
+        <h1>🚀 Madme</h1>
 
         {status === 'loading' && (
           <>

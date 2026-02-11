@@ -52,6 +52,12 @@ class SignUpRequest(BaseModel):
             raise ValueError('Password must be at least 8 characters')
         if len(v) > 128:
             raise ValueError('Password too long')
+        if not re.search(r'[A-Z]', v):
+            raise ValueError('Password must contain an uppercase letter')
+        if not re.search(r'[0-9]', v):
+            raise ValueError('Password must contain a number')
+        if not re.search(r'[^A-Za-z0-9]', v):
+            raise ValueError('Password must contain a special character')
         return v
 
     @validator('username')

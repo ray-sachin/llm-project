@@ -1,5 +1,5 @@
 from fastapi import FastAPI, Request, BackgroundTasks, Depends, HTTPException
-import os, json, base64, uuid
+import os, json, base64, uuid, re
 from dotenv import load_dotenv
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -346,7 +346,12 @@ async def deploy_project(request: Request, background_tasks: BackgroundTasks, cu
         print(f"   Checks: {checks_list}")
         
         # Create task ID from brief (this will be the repo name)
-        sanitized_brief = "".join(c if c.isalnum() or c in "-_ " else "" for c in brief[:30]).strip().replace(" ", "-").lower()
+        # Use up to 6 words from the brief for a clean, readable repo name
+        words = re.sub(r'[^a-zA-Z0-9\s]', '', brief).split()
+        slug_words = [w.lower() for w in words[:6]]
+        sanitized_brief = "-".join(slug_words) if slug_words else ""
+        # GitHub repo names max 100 chars; keep it safe at 80
+        sanitized_brief = sanitized_brief[:80].rstrip("-")
         task_id = sanitized_brief or f"app-{uuid.uuid4().hex[:8]}"
         
         # Prepare data for processing

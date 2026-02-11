@@ -1,5 +1,5 @@
 // frontend/src/pages/Signup.tsx
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import axios from 'axios';
 import { supabase } from '../lib/supabase';
@@ -12,6 +12,18 @@ interface SignupFormData {
   confirmPassword: string;
 }
 
+interface PasswordRule {
+  label: string;
+  test: (pw: string) => boolean;
+}
+
+const PASSWORD_RULES: PasswordRule[] = [
+  { label: 'At least 8 characters', test: (pw) => pw.length >= 8 },
+  { label: 'Contains an uppercase letter', test: (pw) => /[A-Z]/.test(pw) },
+  { label: 'Contains a number', test: (pw) => /[0-9]/.test(pw) },
+  { label: 'Contains a special character (!@#$...)', test: (pw) => /[^A-Za-z0-9]/.test(pw) },
+];
+
 export default function Signup() {
   const navigate = useNavigate();
   const [formData, setFormData] = useState<SignupFormData>({
@@ -23,6 +35,15 @@ export default function Signup() {
   const [loading, setLoading] = useState(false);
   const [oauthLoading, setOauthLoading] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  const passwordStrength = useMemo(() => {
+    return PASSWORD_RULES.map((rule) => ({
+      ...rule,
+      passed: rule.test(formData.password),
+    }));
+  }, [formData.password]);
+
+  const allRulesPassed = passwordStrength.every((r) => r.passed);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setFormData({
@@ -42,8 +63,8 @@ export default function Signup() {
     }
 
     // Validate password strength
-    if (formData.password.length < 8) {
-      setError('Password must be at least 8 characters long');
+    if (!allRulesPassed) {
+      setError('Please meet all password requirements');
       return;
     }
 
@@ -106,7 +127,7 @@ export default function Signup() {
   return (
     <div className="auth-container">
       <div className="auth-box">
-        <h1>🚀 LLM Deployment Platform</h1>
+        <h1>🚀 Madme</h1>
         <h2>Create Account</h2>
 
         {error && <div className="error-message">{error}</div>}
@@ -183,7 +204,16 @@ export default function Signup() {
               placeholder="••••••••"
               required
             />
-            <small>At least 8 characters</small>
+            {formData.password.length > 0 && (
+              <ul className="password-rules">
+                {passwordStrength.map((rule, i) => (
+                  <li key={i} className={rule.passed ? 'rule-pass' : 'rule-fail'}>
+                    <span className="rule-icon">{rule.passed ? '✓' : '○'}</span>
+                    {rule.label}
+                  </li>
+                ))}
+              </ul>
+            )}
           </div>
 
           <div className="form-group">
