@@ -61,6 +61,7 @@ export default function AuthCallback() {
         }
 
         // If this was a GitHub OAuth login, auto-save the GitHub token
+        // BUT only if the user doesn't already have one manually configured
         if (
           session.provider_token &&
           user.app_metadata?.provider === 'github'
@@ -71,16 +72,25 @@ export default function AuthCallback() {
 
           if (githubUsername) {
             try {
-              await axios.post(
+              // Check if user already has a GitHub token configured
+              const existingConfig = await axios.get(
                 `${import.meta.env.VITE_API_URL}/api/auth/github-token`,
-                {
-                  token: session.provider_token,
-                  github_username: githubUsername,
-                },
-                {
-                  headers: { Authorization: `Bearer ${session.access_token}` },
-                }
-              );
+                { headers: { Authorization: `Bearer ${session.access_token}` } }
+              ).catch(() => null);
+
+              // Only save if no existing config (404 means not configured)
+              if (!existingConfig || !existingConfig.data?.configured) {
+                await axios.post(
+                  `${import.meta.env.VITE_API_URL}/api/auth/github-token`,
+                  {
+                    token: session.provider_token,
+                    github_username: githubUsername,
+                  },
+                  {
+                    headers: { Authorization: `Bearer ${session.access_token}` },
+                  }
+                );
+              }
             } catch (ghErr) {
               console.warn('Could not auto-save GitHub token:', ghErr);
             }

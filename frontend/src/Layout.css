@@ -185,17 +185,26 @@
     top: 0;
     right: 0;
     width: 260px;
-    height: 100vh;
+    height: 100dvh;
+    height: 100vh; /* fallback for older browsers */
     background: var(--bg-secondary);
     border-left: 1px solid var(--border-color);
     flex-direction: column;
     align-items: stretch;
     gap: 0.25rem;
     padding: 4.5rem 1rem 1.5rem;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
     transform: translateX(100%);
     transition: transform 0.25s cubic-bezier(0.4, 0, 0.2, 1);
     z-index: 200;
     box-shadow: -4px 0 24px rgba(0, 0, 0, 0.2);
+  }
+
+  @supports (height: 100dvh) {
+    .nav-links {
+      height: 100dvh;
+    }
   }
 
   .nav-links.open {
@@ -219,6 +228,8 @@
 
   .nav-logout {
     margin-top: auto;
+    padding-bottom: 1rem;
+    margin-bottom: env(safe-area-inset-bottom, 0.5rem);
   }
 
   .main-content {
